@@ -4,7 +4,7 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::{
-    input::mouse::AccumulatedMouseMotion,
+    input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
     prelude::*,
     render::{
         mesh::PlaneMeshBuilder,
@@ -120,8 +120,11 @@ fn update_chunks(
 
 fn move_cam(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
+    scroll: Res<AccumulatedMouseScroll>,
     kb: Res<ButtonInput<KeyCode>>,
     mut tf: Single<&mut Transform, With<Camera>>,
+    mut speed: Local<f32>,
+    time: Res<Time>,
 ) {
     let sensi = Vec2::new(0.003, 0.002);
 
@@ -152,6 +155,15 @@ fn move_cam(
         tf.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     }
 
+    if *speed == 0.0 {
+        *speed = 50.0;
+    }
+    *speed += match scroll.unit {
+        MouseScrollUnit::Line => scroll.delta.y * 5.0,
+        MouseScrollUnit::Pixel => scroll.delta.y * 0.25,
+    };
+    *speed = speed.max(1.0);
+
     let mut dir = Vec3::ZERO;
 
     if kb.pressed(KeyCode::KeyW) {
@@ -173,8 +185,6 @@ fn move_cam(
         dir.y += 1.0;
     }
 
-    const SPEED: f32 = 0.5;
-
     let rot = tf.rotation;
-    tf.translation += rot * dir.normalize_or_zero() * SPEED;
+    tf.translation += rot * dir.normalize_or_zero() * *speed * time.delta_secs();
 }
