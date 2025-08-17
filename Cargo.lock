@@ -2532,6 +2532,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "noisy_bevy"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6091c1edbdaeb288e4108f56310c0b3fe597133a0f5be9f39fc54a3940834271"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3586,6 +3595,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "log",
+ "noisy_bevy",
  "tracing",
 ]
 

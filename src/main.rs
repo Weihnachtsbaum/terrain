@@ -6,12 +6,20 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
     input::mouse::AccumulatedMouseMotion,
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::{
+        mesh::PlaneMeshBuilder,
+        render_resource::{AsBindGroup, ShaderRef},
+    },
 };
+use noisy_bevy::NoisyShaderPlugin;
 
 fn main() -> AppExit {
     App::new()
-        .add_plugins((DefaultPlugins, MaterialPlugin::<TerrainMaterial>::default()))
+        .add_plugins((
+            DefaultPlugins,
+            NoisyShaderPlugin,
+            MaterialPlugin::<TerrainMaterial>::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, move_cam)
         .run()
@@ -37,8 +45,17 @@ fn setup(
 ) {
     commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 0.2, 1.0)));
 
+    let mesh = PlaneMeshBuilder {
+        plane: Plane3d {
+            half_size: Vec2::splat(100.0),
+            ..default()
+        },
+        subdivisions: 1000,
+    }
+    .build();
+
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default())),
+        Mesh3d(meshes.add(mesh)),
         MeshMaterial3d(materials.add(TerrainMaterial {})),
     ));
 }
