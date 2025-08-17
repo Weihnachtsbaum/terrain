@@ -31,6 +31,7 @@ tracing = { version = "0.1", features = [
 [features]
 default = ["dev_native"]
 console = []
+frame_time_diagnostics = []
 dev = [
     "console",
     # Improve compile times for dev builds by linking Bevy as a dynamic library.

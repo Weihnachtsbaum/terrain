@@ -16,18 +16,18 @@ struct VertexOutput {
 
 @vertex
 fn vertex(in: Vertex) -> VertexOutput {
+    let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
+    var pos = mesh_functions::mesh_position_local_to_world(world_from_local, vec4(in.position, 1.0));
+    pos.y = noise(pos.xz);
+
     var out: VertexOutput;
-    let noise = noise(in.position.xz);
     // TODO: calculate using the derivative
     out.slope = vec2(
-        (noise(vec2(in.position.x + 0.01, in.position.z)) - noise) / 0.01,
-        (noise(vec2(in.position.x, in.position.z + 0.01)) - noise) / 0.01,
+        (noise(vec2(pos.x + 0.01, pos.z)) - pos.y) / 0.01,
+        (noise(vec2(pos.x, pos.z + 0.01)) - pos.y) / 0.01,
     );
-    let pos = vec3(in.position.x, noise, in.position.z);
 
-    let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
-    let world_pos = mesh_functions::mesh_position_local_to_world(world_from_local, vec4(pos, 1.0));
-    out.clip_pos = position_world_to_clip(world_pos.xyz);
+    out.clip_pos = position_world_to_clip(pos.xyz);
     return out;
 }
 

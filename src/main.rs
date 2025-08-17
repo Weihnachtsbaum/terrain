@@ -1,7 +1,7 @@
 #![cfg_attr(bevy_lint, feature(register_tool), register_tool(bevy))]
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 
-use std::f32::consts::FRAC_PI_2;
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::{
     input::mouse::AccumulatedMouseMotion,
@@ -10,6 +10,7 @@ use bevy::{
         mesh::PlaneMeshBuilder,
         render_resource::{AsBindGroup, ShaderRef},
     },
+    time::common_conditions::on_timer,
 };
 use noisy_bevy::NoisyShaderPlugin;
 
@@ -19,9 +20,20 @@ fn main() -> AppExit {
             DefaultPlugins,
             NoisyShaderPlugin,
             MaterialPlugin::<TerrainMaterial>::default(),
+            #[cfg(feature = "frame_time_diagnostics")]
+            (
+                bevy::diagnostic::LogDiagnosticsPlugin::default(),
+                bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
+            ),
         ))
-        .add_systems(Startup, setup)
-        .add_systems(Update, move_cam)
+        .add_systems(Startup, (setup, update_chunks).chain())
+        .add_systems(
+            Update,
+            (
+                update_chunks.run_if(on_timer(Duration::from_secs(1))),
+                move_cam,
+            ),
+        )
         .run()
 }
 
@@ -38,6 +50,17 @@ impl Material for TerrainMaterial {
     }
 }
 
+#[derive(Component)]
+struct Chunk;
+
+#[derive(Resource)]
+struct ChunkMeshHandle(Handle<Mesh>);
+
+#[derive(Resource)]
+struct TerrainMaterialHandle(Handle<TerrainMaterial>);
+
+const CHUNK_SIZE: f32 = 200.0;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -47,17 +70,52 @@ fn setup(
 
     let mesh = PlaneMeshBuilder {
         plane: Plane3d {
-            half_size: Vec2::splat(100.0),
+            half_size: Vec2::splat(CHUNK_SIZE / 2.0),
             ..default()
         },
         subdivisions: 1000,
     }
     .build();
 
-    commands.spawn((
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(materials.add(TerrainMaterial {})),
-    ));
+    commands.insert_resource(ChunkMeshHandle(meshes.add(mesh)));
+    commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {})));
+}
+
+const RENDER_DIST: i32 = 2;
+
+fn update_chunks(
+    chunk_q: Query<(&Transform, Entity), With<Chunk>>,
+    mut commands: Commands,
+    mesh: Res<ChunkMeshHandle>,
+    material: Res<TerrainMaterialHandle>,
+    cam: Single<&Transform, With<Camera>>,
+) {
+    for (tf, e) in chunk_q.iter() {
+        if tf.translation.distance_squared(cam.translation)
+            > (RENDER_DIST * RENDER_DIST) as f32 * CHUNK_SIZE * CHUNK_SIZE
+        {
+            commands.entity(e).despawn();
+        }
+    }
+    for z in -RENDER_DIST..RENDER_DIST {
+        for x in -RENDER_DIST..RENDER_DIST {
+            let pos = Vec2::new(x as f32, z as f32);
+            if pos.length_squared() > (RENDER_DIST * RENDER_DIST) as f32 {
+                continue;
+            }
+            let pos = (pos + (cam.translation.xz() / CHUNK_SIZE).round()) * CHUNK_SIZE;
+            let pos = Vec3::new(pos.x, 0.0, pos.y);
+            if chunk_q.iter().any(|(tf, _)| tf.translation == pos) {
+                continue;
+            }
+            commands.spawn((
+                Chunk,
+                Mesh3d(mesh.0.clone()),
+                MeshMaterial3d(material.0.clone()),
+                Transform::from_translation(pos),
+            ));
+        }
+    }
 }
 
 fn move_cam(
