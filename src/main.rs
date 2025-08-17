@@ -32,13 +32,17 @@ fn main() -> AppExit {
             (
                 update_chunks.run_if(on_timer(Duration::from_secs(1))),
                 move_cam,
+                TerrainMaterial::update,
             ),
         )
         .run()
 }
 
 #[derive(AsBindGroup, Clone, Asset, TypePath)]
-struct TerrainMaterial {}
+struct TerrainMaterial {
+    #[uniform(0)]
+    cam_pos: Vec3,
+}
 
 impl Material for TerrainMaterial {
     fn vertex_shader() -> ShaderRef {
@@ -47,6 +51,18 @@ impl Material for TerrainMaterial {
 
     fn fragment_shader() -> ShaderRef {
         "shaders/terrain.wgsl".into()
+    }
+}
+
+impl TerrainMaterial {
+    fn update(
+        handle: Res<TerrainMaterialHandle>,
+        mut assets: ResMut<Assets<Self>>,
+        cam: Single<&Transform, With<Camera>>,
+    ) {
+        if let Some(material) = assets.get_mut(&handle.0) {
+            material.cam_pos = cam.translation;
+        }
     }
 }
 
@@ -87,7 +103,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TerrainMaterial>>,
 ) {
-    commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 0.2, 1.0)));
+    commands.spawn(Camera3d::default());
 
     commands.insert_resource(ChunkMeshes(array::from_fn(|i| {
         meshes.add(
@@ -101,7 +117,9 @@ fn setup(
             .build(),
         )
     })));
-    commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {})));
+    commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {
+        cam_pos: Vec3::ZERO,
+    })));
 }
 
 const RENDER_DIST: i32 = 32;
