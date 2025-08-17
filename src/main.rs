@@ -91,7 +91,7 @@ fn update_chunks(
     cam: Single<&Transform, With<Camera>>,
 ) {
     for (tf, e) in chunk_q.iter() {
-        if tf.translation.distance_squared(cam.translation)
+        if tf.translation.xz().distance_squared(cam.translation.xz())
             > (RENDER_DIST * RENDER_DIST) as f32 * CHUNK_SIZE * CHUNK_SIZE
         {
             commands.entity(e).despawn();
