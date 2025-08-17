@@ -45,6 +45,7 @@ fn setup(
 
 fn move_cam(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
+    kb: Res<ButtonInput<KeyCode>>,
     mut tf: Single<&mut Transform, With<Camera>>,
 ) {
     let sensi = Vec2::new(0.003, 0.002);
@@ -75,4 +76,30 @@ fn move_cam(
 
         tf.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     }
+
+    let mut dir = Vec3::ZERO;
+
+    if kb.pressed(KeyCode::KeyW) {
+        dir.z -= 1.0;
+    }
+    if kb.pressed(KeyCode::KeyS) {
+        dir.z += 1.0;
+    }
+    if kb.pressed(KeyCode::KeyA) {
+        dir.x -= 1.0;
+    }
+    if kb.pressed(KeyCode::KeyD) {
+        dir.x += 1.0;
+    }
+    if kb.pressed(KeyCode::ShiftLeft) {
+        dir.y -= 1.0;
+    }
+    if kb.pressed(KeyCode::Space) {
+        dir.y += 1.0;
+    }
+
+    const SPEED: f32 = 0.5;
+
+    let rot = tf.rotation;
+    tf.translation += rot * dir.normalize_or_zero() * SPEED;
 }
