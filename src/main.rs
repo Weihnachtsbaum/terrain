@@ -1,7 +1,7 @@
 #![cfg_attr(bevy_lint, feature(register_tool), register_tool(bevy))]
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 
-use std::{array, borrow::Cow, f32::consts::FRAC_PI_2, result::Result, time::Duration};
+use std::{array, borrow::Cow, f32::consts::FRAC_PI_2, mem, result::Result, time::Duration};
 
 use bevy::{
     core_pipeline::{
@@ -118,10 +118,12 @@ const CHUNK_SIZE: f32 = 200.0;
 
 fn setup(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TerrainMaterial>>,
 ) {
     commands.spawn(Camera3d::default());
+    mem::forget(asset_server.load::<Shader>("shaders/common.wgsl"));
 
     commands.insert_resource(ChunkMeshes(array::from_fn(|i| {
         meshes.add(
