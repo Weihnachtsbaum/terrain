@@ -1,14 +1,31 @@
 #![cfg_attr(bevy_lint, feature(register_tool), register_tool(bevy))]
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 
-use std::{array, f32::consts::FRAC_PI_2, time::Duration};
+use std::{array, borrow::Cow, f32::consts::FRAC_PI_2, result::Result, time::Duration};
 
 use bevy::{
+    core_pipeline::{
+        core_3d::graph::{Core3d, Node3d},
+        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+    },
+    ecs::{query::QueryItem, system::lifetimeless::Read},
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
     prelude::*,
     render::{
+        Render, RenderApp, RenderSet,
         mesh::PlaneMeshBuilder,
-        render_resource::{AsBindGroup, ShaderRef},
+        render_graph::{
+            NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
+        },
+        render_resource::{
+            AsBindGroup, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
+            CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, MultisampleState,
+            PipelineCache, RenderPassDescriptor, RenderPipelineDescriptor, ShaderRef, ShaderStages,
+            SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat,
+            binding_types::uniform_buffer,
+        },
+        renderer::{RenderContext, RenderDevice},
+        view::{ViewTarget, ViewUniform, ViewUniforms},
     },
     time::common_conditions::on_timer,
 };
@@ -25,6 +42,7 @@ fn main() -> AppExit {
                 bevy::diagnostic::LogDiagnosticsPlugin::default(),
                 bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
             ),
+            SkyPlugin,
         ))
         .add_systems(Startup, (setup, update_chunks).chain())
         .add_systems(
@@ -229,4 +247,160 @@ fn move_cam(
 
     let rot = tf.rotation;
     tf.translation += rot * dir.normalize_or_zero() * *speed * time.delta_secs();
+}
+
+struct SkyPlugin;
+
+impl Plugin for SkyPlugin {
+    fn build(&self, _app: &mut App) {}
+
+    fn finish(&self, app: &mut App) {
+        app.get_sub_app_mut(RenderApp)
+            .expect("No RenderApp")
+            .init_resource::<SkyPipelineSpecializer>()
+            .init_resource::<SpecializedRenderPipelines<SkyPipelineSpecializer>>()
+            .add_systems(
+                Render,
+                (
+                    queue_sky_pipeline.in_set(RenderSet::Queue),
+                    prepare_sky_bind_group.in_set(RenderSet::PrepareBindGroups),
+                ),
+            )
+            .add_render_graph_node::<ViewNodeRunner<RenderSkyNode>>(Core3d, RenderSkyLabel)
+            .add_render_graph_edge(Core3d, RenderSkyLabel, Node3d::MainOpaquePass);
+    }
+}
+
+#[derive(Resource)]
+struct SkyPipelineSpecializer {
+    shader: Handle<Shader>,
+    layout: BindGroupLayout,
+}
+
+impl FromWorld for SkyPipelineSpecializer {
+    fn from_world(world: &mut World) -> Self {
+        let rd = world.resource::<RenderDevice>();
+        Self {
+            shader: world.load_asset("shaders/sky.wgsl"),
+            layout: rd.create_bind_group_layout(
+                "sky_bind_group_layout",
+                &BindGroupLayoutEntries::with_indices(
+                    ShaderStages::FRAGMENT,
+                    // Bevy's atmosphere shader functions assume a specific
+                    // [layout](https://github.com/bevyengine/bevy/blob/main/crates/bevy_pbr/src/atmosphere/bindings.wgsl)
+                    ((3, uniform_buffer::<ViewUniform>(false)),),
+                ),
+            ),
+        }
+    }
+}
+
+impl SpecializedRenderPipeline for SkyPipelineSpecializer {
+    type Key = SkyPipelineKey;
+
+    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        RenderPipelineDescriptor {
+            label: None,
+            layout: vec![self.layout.clone()],
+            push_constant_ranges: vec![],
+            vertex: fullscreen_shader_vertex_state(),
+            primitive: default(),
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: key.msaa_samples,
+                ..default()
+            },
+            fragment: Some(FragmentState {
+                shader: self.shader.clone(),
+                shader_defs: vec![],
+                entry_point: Cow::Borrowed("main"),
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::bevy_default(),
+                    blend: None,
+                    write_mask: ColorWrites::COLOR,
+                })],
+            }),
+            zero_initialize_workgroup_memory: true,
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct SkyPipelineKey {
+    msaa_samples: u32,
+}
+
+#[derive(Component)]
+struct SkyPipelineId(CachedRenderPipelineId);
+
+fn queue_sky_pipeline(
+    cam: Single<(Entity, &Msaa), With<Camera>>,
+    pipeline_cache: Res<PipelineCache>,
+    layouts: Res<SkyPipelineSpecializer>,
+    mut specializer: ResMut<SpecializedRenderPipelines<SkyPipelineSpecializer>>,
+    mut commands: Commands,
+) {
+    let id = specializer.specialize(
+        &pipeline_cache,
+        &layouts,
+        SkyPipelineKey {
+            msaa_samples: cam.1.samples(),
+        },
+    );
+    commands.entity(cam.0).insert(SkyPipelineId(id));
+}
+
+#[derive(Component)]
+struct SkyBindGroup(BindGroup);
+
+fn prepare_sky_bind_group(
+    cam: Single<Entity, With<Camera>>,
+    rd: Res<RenderDevice>,
+    specializer: Res<SkyPipelineSpecializer>,
+    view_uniforms: Res<ViewUniforms>,
+    mut commands: Commands,
+) {
+    let view_bindings = view_uniforms
+        .uniforms
+        .binding()
+        .expect("Could not create sky bind group");
+    let bind_group = rd.create_bind_group(
+        "sky_bind_group",
+        &specializer.layout,
+        &BindGroupEntries::with_indices(((3, view_bindings),)),
+    );
+    commands.entity(*cam).insert(SkyBindGroup(bind_group));
+}
+
+#[derive(RenderLabel, Hash, Debug, PartialEq, Eq, Clone)]
+struct RenderSkyLabel;
+
+#[derive(Default)]
+struct RenderSkyNode;
+
+impl ViewNode for RenderSkyNode {
+    type ViewQuery = (Read<SkyPipelineId>, Read<ViewTarget>, Read<SkyBindGroup>);
+
+    fn run<'w>(
+        &self,
+        _graph: &mut RenderGraphContext,
+        render_context: &mut RenderContext<'w>,
+        (pipeline_id, view_target, bind_group): QueryItem<'w, Self::ViewQuery>,
+        world: &'w World,
+    ) -> Result<(), NodeRunError> {
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) else {
+            return Ok(());
+        };
+        let mut pass = render_context
+            .command_encoder()
+            .begin_render_pass(&RenderPassDescriptor {
+                color_attachments: &[Some(view_target.get_color_attachment())],
+                ..default()
+            });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.draw(0..3, 0..1);
+        Ok(())
+    }
 }
