@@ -1,11 +1,10 @@
 #import bevy_pbr::{
     forward_io::Vertex,
     mesh_functions,
+    mesh_view_bindings::view,
     view_transformations::position_world_to_clip
 }
 #import noisy_bevy::fbm_simplex_2d
-
-@group(2) @binding(0) var<uniform> cam_pos: vec3<f32>;
 
 const light_intensity = 1.0;
 const fog_density = 0.0002;
@@ -42,7 +41,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let slope = clamp(length(in.slope * 0.5), 0.0, 1.0);
     let albedo = (1.0 - slope) * vec3(0.1, 0.4, 0.0) + slope * vec3(0.2, 0.2, 0.1);
     var out = albedo * brightness;
-    let fog = exp(-fog_density * distance(in.world_pos, cam_pos));
+    let fog = exp(-fog_density * distance(in.world_pos, view.world_position));
     out = mix(fog_color, out, fog);
     return vec4(out, 1.0);
 }

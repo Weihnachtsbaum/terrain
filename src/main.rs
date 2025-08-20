@@ -50,17 +50,13 @@ fn main() -> AppExit {
             (
                 update_chunks.run_if(on_timer(Duration::from_secs(1))),
                 move_cam,
-                TerrainMaterial::update,
             ),
         )
         .run()
 }
 
 #[derive(AsBindGroup, Clone, Asset, TypePath)]
-struct TerrainMaterial {
-    #[uniform(0)]
-    cam_pos: Vec3,
-}
+struct TerrainMaterial {}
 
 impl Material for TerrainMaterial {
     fn vertex_shader() -> ShaderRef {
@@ -69,18 +65,6 @@ impl Material for TerrainMaterial {
 
     fn fragment_shader() -> ShaderRef {
         "shaders/terrain.wgsl".into()
-    }
-}
-
-impl TerrainMaterial {
-    fn update(
-        handle: Res<TerrainMaterialHandle>,
-        mut assets: ResMut<Assets<Self>>,
-        cam: Single<&Transform, With<Camera>>,
-    ) {
-        if let Some(material) = assets.get_mut(&handle.0) {
-            material.cam_pos = cam.translation;
-        }
     }
 }
 
@@ -137,9 +121,7 @@ fn setup(
             .build(),
         )
     })));
-    commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {
-        cam_pos: Vec3::ZERO,
-    })));
+    commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {})));
 }
 
 const RENDER_DIST: i32 = 32;
