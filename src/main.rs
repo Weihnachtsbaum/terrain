@@ -13,6 +13,7 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
+        globals::{GlobalsBuffer, GlobalsUniform},
         mesh::PlaneMeshBuilder,
         render_graph::{
             NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
@@ -271,8 +272,14 @@ impl FromWorld for SkyPipelineSpecializer {
                 &BindGroupLayoutEntries::with_indices(
                     ShaderStages::FRAGMENT,
                     // Bevy's atmosphere shader functions assume a specific
-                    // [layout](https://github.com/bevyengine/bevy/blob/main/crates/bevy_pbr/src/atmosphere/bindings.wgsl)
-                    ((3, uniform_buffer::<ViewUniform>(false)),),
+                    // [layout](https://github.com/bevyengine/bevy/blob/main/crates/bevy_pbr/src/atmosphere/bindings.wgsl).
+                    // Bevy's mesh functions assume a different
+                    // [layout](https://github.com/bevyengine/bevy/blob/main/crates/bevy_pbr/src/render/mesh_view_bindings.wgsl).
+                    // Here we just mix 'n match to make it work :)
+                    (
+                        (3, uniform_buffer::<ViewUniform>(false)),
+                        (11, uniform_buffer::<GlobalsUniform>(false)),
+                    ),
                 ),
             ),
         }
@@ -342,16 +349,21 @@ fn prepare_sky_bind_group(
     rd: Res<RenderDevice>,
     specializer: Res<SkyPipelineSpecializer>,
     view_uniforms: Res<ViewUniforms>,
+    globals_buffer: Res<GlobalsBuffer>,
     mut commands: Commands,
 ) {
     let view_bindings = view_uniforms
         .uniforms
         .binding()
-        .expect("Could not create sky bind group");
+        .expect("Could not create view bindings for sky bind group");
+    let globals_binding = globals_buffer
+        .buffer
+        .binding()
+        .expect("Could not create globals bindings for sky bind group");
     let bind_group = rd.create_bind_group(
         "sky_bind_group",
         &specializer.layout,
-        &BindGroupEntries::with_indices(((3, view_bindings),)),
+        &BindGroupEntries::with_indices(((3, view_bindings), (11, globals_binding))),
     );
     commands.entity(*cam).insert(SkyBindGroup(bind_group));
 }
