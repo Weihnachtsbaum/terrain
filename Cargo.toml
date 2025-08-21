@@ -25,7 +25,8 @@ log = { version = "0.4", features = [
 ] }
 tracing = { version = "0.1", features = [
     "max_level_debug",
-    "release_max_level_warn",
+    # Has to be info for profiling. Override to warn for actual release builds.
+    "release_max_level_info",
 ] }
 
 [features]
