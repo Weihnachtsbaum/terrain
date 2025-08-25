@@ -6,7 +6,6 @@
 }
 #import noisy_bevy::fbm_simplex_2d
 
-const light_intensity = 1.0;
 const fog_density = 0.0002;
 const fog_color = vec3(0.6, 0.6, 0.8);
 
@@ -37,7 +36,7 @@ fn vertex(in: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(vec3(-in.slope.x, 1.0, -in.slope.y));
-    let brightness = clamp(dot(normal, common::sun_dir) * light_intensity, 0.1, 1.0);
+    let brightness = clamp(dot(normal, common::sun_dir) * common::sun_intensity, 0.1, 1.0);
     let slope = clamp(length(in.slope * 0.5), 0.0, 1.0);
     let albedo = (1.0 - slope) * vec3(0.1, 0.4, 0.0) + slope * vec3(0.2, 0.2, 0.1);
     var out = albedo * brightness;
