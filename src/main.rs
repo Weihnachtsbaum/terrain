@@ -20,11 +20,12 @@ use bevy::{
         },
         render_resource::{
             AsBindGroup, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
-            BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState,
-            MultisampleState, PipelineCache, RenderPassDescriptor, RenderPipelineDescriptor,
-            ShaderRef, ShaderStages, SpecializedRenderPipeline, SpecializedRenderPipelines,
-            TextureFormat, TextureSampleType, TextureUsages,
-            binding_types::{texture_2d_multisampled, uniform_buffer},
+            CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, MultisampleState,
+            PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderRef, ShaderStages,
+            SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat,
+            TextureSampleType, TextureUsages,
+            binding_types::{sampler, texture_2d, texture_2d_multisampled, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice},
         view::{ViewDepthTexture, ViewTarget, ViewUniform, ViewUniforms},
@@ -417,13 +418,7 @@ impl Plugin for WaterPlugin {
             .expect("No RenderApp")
             .init_resource::<WaterPipelineSpecializer>()
             .init_resource::<SpecializedRenderPipelines<WaterPipelineSpecializer>>()
-            .add_systems(
-                Render,
-                (
-                    queue_water_pipeline.in_set(RenderSet::Queue),
-                    prepare_water_bind_group.in_set(RenderSet::PrepareBindGroups),
-                ),
-            )
+            .add_systems(Render, queue_water_pipeline.in_set(RenderSet::Queue))
             .add_render_graph_node::<ViewNodeRunner<RenderWaterNode>>(Core3d, RenderWaterLabel)
             .add_render_graph_edges(
                 Core3d,
@@ -440,6 +435,7 @@ impl Plugin for WaterPlugin {
 struct WaterPipelineSpecializer {
     shader: Handle<Shader>,
     layout: BindGroupLayout,
+    sampler: Sampler,
 }
 
 impl FromWorld for WaterPipelineSpecializer {
@@ -453,19 +449,25 @@ impl FromWorld for WaterPipelineSpecializer {
                     ShaderStages::FRAGMENT,
                     (
                         (0, texture_2d_multisampled(TextureSampleType::Depth)),
+                        (
+                            1,
+                            texture_2d(TextureSampleType::Float { filterable: false }),
+                        ),
+                        (2, sampler(SamplerBindingType::NonFiltering)),
                         (3, uniform_buffer::<ViewUniform>(false)),
                         (11, uniform_buffer::<GlobalsUniform>(false)),
                     ),
                 ),
             ),
+            sampler: rd.create_sampler(&default()),
         }
     }
 }
 
 impl SpecializedRenderPipeline for WaterPipelineSpecializer {
-    type Key = PipelineKey;
+    type Key = ();
 
-    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+    fn specialize(&self, _key: Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
             label: None,
             layout: vec![self.layout.clone()],
@@ -473,18 +475,15 @@ impl SpecializedRenderPipeline for WaterPipelineSpecializer {
             vertex: fullscreen_shader_vertex_state(),
             primitive: default(),
             depth_stencil: None,
-            multisample: MultisampleState {
-                count: key.msaa_samples,
-                ..default()
-            },
+            multisample: default(),
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
                 shader_defs: vec![],
                 entry_point: Cow::Borrowed("main"),
                 targets: vec![Some(ColorTargetState {
                     format: TextureFormat::bevy_default(),
-                    blend: Some(BlendState::ALPHA_BLENDING),
-                    write_mask: ColorWrites::ALL,
+                    blend: None,
+                    write_mask: ColorWrites::COLOR,
                 })],
             }),
             zero_initialize_workgroup_memory: true,
@@ -502,45 +501,8 @@ fn queue_water_pipeline(
     mut specializer: ResMut<SpecializedRenderPipelines<WaterPipelineSpecializer>>,
     mut commands: Commands,
 ) {
-    let id = specializer.specialize(
-        &pipeline_cache,
-        &layouts,
-        PipelineKey {
-            msaa_samples: cam.1.samples(),
-        },
-    );
+    let id = specializer.specialize(&pipeline_cache, &layouts, ());
     commands.entity(cam.0).insert(WaterPipelineId(id));
-}
-
-#[derive(Component)]
-struct WaterBindGroup(BindGroup);
-
-fn prepare_water_bind_group(
-    cam: Single<(Entity, &ViewDepthTexture), With<Camera>>,
-    rd: Res<RenderDevice>,
-    specializer: Res<WaterPipelineSpecializer>,
-    view_uniforms: Res<ViewUniforms>,
-    globals_buffer: Res<GlobalsBuffer>,
-    mut commands: Commands,
-) {
-    let view_bindings = view_uniforms
-        .uniforms
-        .binding()
-        .expect("Could not create view bindings for water bind group");
-    let globals_binding = globals_buffer
-        .buffer
-        .binding()
-        .expect("Could not create globals bindings for water bind group");
-    let bind_group = rd.create_bind_group(
-        "water_bind_group",
-        &specializer.layout,
-        &BindGroupEntries::with_indices((
-            (0, cam.1.view()),
-            (3, view_bindings),
-            (11, globals_binding),
-        )),
-    );
-    commands.entity(cam.0).insert(WaterBindGroup(bind_group));
 }
 
 #[derive(RenderLabel, Hash, Debug, PartialEq, Eq, Clone)]
@@ -553,28 +515,57 @@ impl ViewNode for RenderWaterNode {
     type ViewQuery = (
         Read<WaterPipelineId>,
         Read<ViewTarget>,
-        Read<WaterBindGroup>,
+        Read<ViewDepthTexture>,
     );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (pipeline_id, view_target, bind_group): QueryItem<'w, Self::ViewQuery>,
+        (pipeline_id, view_target, view_depth_texture): QueryItem<'w, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) else {
             return Ok(());
         };
+
+        let pipeline_specializer = world.resource::<WaterPipelineSpecializer>();
+        let post_process = view_target.post_process_write();
+        let view_bindings = world
+            .resource::<ViewUniforms>()
+            .uniforms
+            .binding()
+            .expect("Could not create view bindings for water bind group");
+        let globals_binding = world
+            .resource::<GlobalsBuffer>()
+            .buffer
+            .binding()
+            .expect("Could not create globals bindings for water bind group");
+        let bind_group = render_context.render_device().create_bind_group(
+            "water_bind_group",
+            &pipeline_specializer.layout,
+            &BindGroupEntries::with_indices((
+                (0, view_depth_texture.view()),
+                (1, post_process.source),
+                (2, &pipeline_specializer.sampler),
+                (3, view_bindings),
+                (11, globals_binding),
+            )),
+        );
+
         let mut pass = render_context
             .command_encoder()
             .begin_render_pass(&RenderPassDescriptor {
-                color_attachments: &[Some(view_target.get_color_attachment())],
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: post_process.destination,
+                    resolve_target: None,
+                    ops: default(),
+                })],
                 ..default()
             });
         pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..3, 0..1);
         Ok(())
     }

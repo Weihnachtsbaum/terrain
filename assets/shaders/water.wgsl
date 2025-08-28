@@ -2,20 +2,31 @@
 #import bevy_pbr::{
     atmosphere::{
         bindings::view,
-        functions::uv_to_ray_direction,
+        functions::{
+            ndc_to_uv,
+            uv_to_ndc,
+            uv_to_ray_direction,
+        }
     },
     mesh_view_bindings::globals,
 }
 
 @group(0) @binding(0) var depth_texture: texture_depth_multisampled_2d;
+@group(0) @binding(1) var texture: texture_2d<f32>;
+@group(0) @binding(2) var texture_sampler: sampler;
 
 const see_dist = 100.0;
 const falloff = 0.5;
 const color = vec3(0.0, 0.2, 0.6);
 const specular_size = 1.0;
 
+const reflection_ray_len = 10.0; // keep below see_dist for underwater reflections
+const reflection_blend_size = 0.1;
+
 @fragment
 fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    let in_color = textureSample(texture, texture_sampler, in.uv);
+
     let ray_dir = uv_to_ray_direction(in.uv);
 
     let depth = textureLoad(depth_texture, vec2<i32>(in.position.xy), 0);
@@ -41,24 +52,29 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         water_depth = 0.0;
     }
 
-    let intensity = min(pow(water_depth / see_dist, falloff), 1.0);
+    let intensity = water_depth_to_intensity(water_depth);
+    let with_water_color = mix(in_color.rgb, color, intensity);
 
-    let normal = normal(surface_pos.xz);
-    let lambertian = dot(normal, common::sun_dir);
-    let specular = pow(dot(ray_dir.xyz + common::sun_dir, normal), specular_size);
-    let brightness = clamp((lambertian + specular) * common::sun_intensity, 0.1, 1.0);
-
-    if surface_dist > 0.0 && surface_dist < cam_terrain_dist {
-        return vec4(color * brightness, intensity);
-    } else {
-        return vec4(color, intensity);
+    if surface_dist <= 0.0 || surface_dist >= cam_terrain_dist {
+        return vec4(with_water_color, 1.0);
     }
+
+    let normal = normal(surface_pos.xz, pos.y > 0.0);
+
+    // Schlick's approximation
+    const r0 = 0.04;
+    let fresnel = r0 + (1.0 - r0) * clamp(pow(1.0 - clamp(dot(normal, -ray_dir.xyz), 0.0, 1.0), 5.0), 0.0, 1.0);
+
+    let reflection = reflection(surface_pos, normal, ray_dir.xyz);
+    let with_reflection = mix(with_water_color, reflection, fresnel);
+
+    return vec4(with_reflection, 1.0);
 }
 
 const wave_octaves = 5;
 const speed = 1.0;
 
-fn normal(pos: vec2<f32>) -> vec3<f32> {
+fn normal(pos: vec2<f32>, from_above: bool) -> vec3<f32> {
     var sum = vec2(0.0);
     var freq = 0.1;
     var amp = 0.5;
@@ -70,15 +86,49 @@ fn normal(pos: vec2<f32>) -> vec3<f32> {
         amp *= 0.5;
         angle += 1.0;
     }
-    return normalize(vec3(sum.x, 1.0, sum.y));
-}
-
-fn uv_to_ndc(uv: vec2<f32>) -> vec2<f32> {
-    return uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
+    let result = normalize(vec3(sum.x, 1.0, sum.y));
+    if from_above {
+        return result;
+    } else {
+        return -result;
+    }
 }
 
 fn ndc_to_camera_dist(ndc: vec3<f32>) -> f32 {
     let view_pos = view.view_from_clip * vec4(ndc, 1.0);
     let t = length(view_pos.xyz / view_pos.w);
     return t;
+}
+
+fn reflection(surface_pos: vec3<f32>, normal: vec3<f32>, ray_dir: vec3<f32>) -> vec3<f32> {
+    let reflect_dir = 2.0 * dot(normal, -ray_dir) * normal + ray_dir;
+
+    let ray_pos = surface_pos + reflection_ray_len * reflect_dir;
+    let clip = view.clip_from_world * vec4(ray_pos, 0.0);
+    let ndc = clip.xy / clip.w;
+    let uv = ndc_to_uv(ndc);
+
+    var base_color: vec3<f32>;
+    if view.world_position.y > 0.0 {
+        base_color = mix(common::high_sky_color, common::low_sky_color, 0.3);
+    } else {
+        base_color = color;
+    }
+
+    if uv.x < 0.0 || uv.x >= 1.0 || uv.y < 0.0 || uv.y >= 1.0 {
+        return base_color;
+    }
+
+    var reflection = textureSample(texture, texture_sampler, uv).xyz;
+    if view.world_position.y < 0.0 {
+        reflection = mix(reflection, color, water_depth_to_intensity(reflection_ray_len));
+    }
+    let dist_to_edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+    let blend = min(dist_to_edge / reflection_blend_size, 1.0);
+
+    return mix(base_color, reflection, blend);
+}
+
+fn water_depth_to_intensity(depth: f32) -> f32 {
+    return min(pow(depth / see_dist, falloff), 1.0);
 }

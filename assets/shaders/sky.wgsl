@@ -5,8 +5,6 @@
 }
 #import noisy_bevy::fbm_simplex_3d
 
-const low_color = vec3(1.0, 0.7, 0.5);
-const high_color = vec3(0.2, 0.4, 0.7);
 const exp = 0.3;
 
 const sun_color = vec3(1.0, 0.9, 0.8);
@@ -23,7 +21,7 @@ const dark_cloud_brightness = 0.4;
 fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let ray_dir = uv_to_ray_direction(in.uv);
     let t = pow(smoothstep(0.0, 1.0, ray_dir.y), exp);
-    var out = mix(low_color, high_color, t);
+    var out = mix(common::low_sky_color, common::high_sky_color, t);
     
     let sun_dist = distance(ray_dir.xyz, common::sun_dir);
     var sun_intensity: f32;
