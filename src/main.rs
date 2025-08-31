@@ -28,7 +28,7 @@ use bevy::{
             binding_types::{sampler, texture_2d, texture_2d_multisampled, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice},
-        view::{ViewDepthTexture, ViewTarget, ViewUniform, ViewUniforms},
+        view::{ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
     time::common_conditions::on_timer,
 };
@@ -48,15 +48,29 @@ fn main() -> AppExit {
             SkyPlugin,
             WaterPlugin,
         ))
+        .init_state::<AppState>()
         .add_systems(Startup, (setup, update_chunks).chain())
         .add_systems(
             Update,
             (
-                update_chunks.run_if(on_timer(Duration::from_secs(1))),
-                move_cam,
+                (
+                    update_chunks.run_if(on_timer(Duration::from_secs(1))),
+                    move_cam,
+                )
+                    .run_if(in_state(AppState::Running)),
+                update_state,
             ),
         )
+        .add_systems(OnEnter(AppState::Paused), on_pause)
         .run()
+}
+
+#[derive(States, Debug, PartialEq, Eq, Hash, Clone, Default)]
+#[states(scoped_entities)]
+enum AppState {
+    #[default]
+    Running,
+    Paused,
 }
 
 #[derive(AsBindGroup, Clone, Asset, TypePath)]
@@ -130,6 +144,38 @@ fn setup(
         )
     })));
     commands.insert_resource(TerrainMaterialHandle(materials.add(TerrainMaterial {})));
+}
+
+fn update_state(
+    state: Res<State<AppState>>,
+    mut next: ResMut<NextState<AppState>>,
+    kb: Res<ButtonInput<KeyCode>>,
+) {
+    if kb.just_pressed(KeyCode::Escape) {
+        next.set(match *state.get() {
+            AppState::Running => AppState::Paused,
+            AppState::Paused => AppState::Running,
+        });
+    }
+}
+
+fn on_pause(mut commands: Commands) {
+    commands.spawn((
+        StateScoped(AppState::Paused),
+        Node {
+            width: Val::Percent(90.0),
+            height: Val::Percent(90.0),
+            border: UiRect::all(Val::Percent(0.5)),
+            justify_self: JustifySelf::Center,
+            align_self: AlignSelf::Center,
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        BorderRadius::all(Val::Percent(5.0)),
+        BorderColor(Color::BLACK),
+        children![(Text::new("Paused"), TextFont::from_font_size(50.0))],
+    ));
 }
 
 const RENDER_DIST: i32 = 32;
@@ -284,7 +330,7 @@ impl FromWorld for SkyPipelineSpecializer {
                     // [layout](https://github.com/bevyengine/bevy/blob/main/crates/bevy_pbr/src/render/mesh_view_bindings.wgsl).
                     // Here we just mix 'n match to make it work :)
                     (
-                        (3, uniform_buffer::<ViewUniform>(false)),
+                        (3, uniform_buffer::<ViewUniform>(true)),
                         (11, uniform_buffer::<GlobalsUniform>(false)),
                     ),
                 ),
@@ -382,13 +428,18 @@ struct RenderSkyLabel;
 struct RenderSkyNode;
 
 impl ViewNode for RenderSkyNode {
-    type ViewQuery = (Read<SkyPipelineId>, Read<ViewTarget>, Read<SkyBindGroup>);
+    type ViewQuery = (
+        Read<SkyPipelineId>,
+        Read<ViewTarget>,
+        Read<SkyBindGroup>,
+        Read<ViewUniformOffset>,
+    );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (pipeline_id, view_target, bind_group): QueryItem<'w, Self::ViewQuery>,
+        (pipeline_id, view_target, bind_group, view_uniform_offset): QueryItem<'w, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -402,7 +453,7 @@ impl ViewNode for RenderSkyNode {
                 ..default()
             });
         pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_bind_group(0, &bind_group.0, &[view_uniform_offset.offset]);
         pass.draw(0..3, 0..1);
         Ok(())
     }
@@ -454,7 +505,7 @@ impl FromWorld for WaterPipelineSpecializer {
                             texture_2d(TextureSampleType::Float { filterable: false }),
                         ),
                         (2, sampler(SamplerBindingType::NonFiltering)),
-                        (3, uniform_buffer::<ViewUniform>(false)),
+                        (3, uniform_buffer::<ViewUniform>(true)),
                         (11, uniform_buffer::<GlobalsUniform>(false)),
                     ),
                 ),
@@ -516,13 +567,17 @@ impl ViewNode for RenderWaterNode {
         Read<WaterPipelineId>,
         Read<ViewTarget>,
         Read<ViewDepthTexture>,
+        Read<ViewUniformOffset>,
     );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (pipeline_id, view_target, view_depth_texture): QueryItem<'w, Self::ViewQuery>,
+        (pipeline_id, view_target, view_depth_texture, view_uniform_offset): QueryItem<
+            'w,
+            Self::ViewQuery,
+        >,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -565,7 +620,7 @@ impl ViewNode for RenderWaterNode {
                 ..default()
             });
         pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
         pass.draw(0..3, 0..1);
         Ok(())
     }
