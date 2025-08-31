@@ -10,6 +10,7 @@ use bevy::{
     },
     ecs::{query::QueryItem, system::lifetimeless::Read},
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
+    platform::collections::HashSet,
     prelude::*,
     render::{
         Render, RenderApp, RenderSet,
@@ -228,12 +229,14 @@ fn update_chunks(
     material: Res<TerrainMaterialHandle>,
     cam: Single<&Transform, With<Camera>>,
 ) {
+    let mut chunks = HashSet::new();
     for (tf, e) in chunk_q.iter() {
         let dist_squared = tf.translation.xz().distance_squared(cam.translation.xz());
         if dist_squared > (RENDER_DIST * RENDER_DIST) as f32 * CHUNK_SIZE * CHUNK_SIZE {
             commands.entity(e).despawn();
             continue;
         }
+        chunks.insert((tf.translation.xz() / CHUNK_SIZE).as_ivec2());
         commands.entity(e).insert(Mesh3d(meshes.get(dist_squared)));
     }
     for z in -RENDER_DIST..RENDER_DIST {
@@ -242,16 +245,16 @@ fn update_chunks(
             if pos.length_squared() > (RENDER_DIST * RENDER_DIST) as f32 {
                 continue;
             }
-            let pos = (pos + (cam.translation.xz() / CHUNK_SIZE).round()) * CHUNK_SIZE;
-            let pos = Vec3::new(pos.x, 0.0, pos.y);
-            if chunk_q.iter().any(|(tf, _)| tf.translation == pos) {
+            let pos = pos + (cam.translation.xz() / CHUNK_SIZE).round();
+            if chunks.contains(&pos.as_ivec2()) {
                 continue;
             }
+            let pos = pos * CHUNK_SIZE;
             commands.spawn((
                 Chunk,
-                Mesh3d(meshes.get(pos.xz().distance_squared(cam.translation.xz()))),
+                Mesh3d(meshes.get(pos.distance_squared(cam.translation.xz()))),
                 MeshMaterial3d(material.0.clone()),
-                Transform::from_translation(pos),
+                Transform::from_xyz(pos.x, 0.0, pos.y),
             ));
         }
     }
