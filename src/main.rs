@@ -31,6 +31,7 @@ use bevy::{
         view::{ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
     time::common_conditions::on_timer,
+    window::WindowMode,
 };
 use noisy_bevy::NoisyShaderPlugin;
 
@@ -59,6 +60,7 @@ fn main() -> AppExit {
                 )
                     .run_if(in_state(AppState::Running)),
                 update_state,
+                toggle_fullscreen,
             ),
         )
         .add_systems(OnEnter(AppState::Paused), on_pause)
@@ -166,16 +168,55 @@ fn on_pause(mut commands: Commands) {
             width: Val::Percent(90.0),
             height: Val::Percent(90.0),
             border: UiRect::all(Val::Percent(0.5)),
+            flex_direction: FlexDirection::Column,
             justify_self: JustifySelf::Center,
             align_self: AlignSelf::Center,
-            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         BorderRadius::all(Val::Percent(5.0)),
         BorderColor(Color::BLACK),
-        children![(Text::new("Paused"), TextFont::from_font_size(50.0))],
+        children![
+            (Text::new("Paused"), TextFont::from_font_size(50.0)),
+            (
+                Button,
+                Node {
+                    height: Val::Px(50.0),
+                    width: Val::Percent(70.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BorderRadius::all(Val::Percent(100.0)),
+                children![(
+                    Text::new("Toggle fullscreen"),
+                    TextFont::from_font_size(30.0),
+                )]
+            )
+        ],
     ));
+}
+
+fn toggle_fullscreen(
+    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
+    mut window: Single<&mut Window>,
+) {
+    for (interaction, mut bg) in &mut q {
+        bg.0 = match *interaction {
+            Interaction::Pressed => {
+                window.mode = match window.mode {
+                    WindowMode::Windowed => {
+                        WindowMode::BorderlessFullscreen(MonitorSelection::Current)
+                    }
+                    _ => WindowMode::Windowed,
+                };
+                Color::srgb(0.4, 0.4, 0.4)
+            }
+            Interaction::Hovered => Color::srgb(0.2, 0.2, 0.2),
+            Interaction::None => Color::BLACK,
+        };
+    }
 }
 
 const RENDER_DIST: i32 = 32;
