@@ -4,7 +4,7 @@
     mesh_view_bindings::view,
     view_transformations::position_world_to_clip
 }
-#import noisy_bevy::fbm_simplex_2d
+#import noisy_bevy::simplex_noise_2d
 
 const fog_density = 0.0002;
 const fog_color = vec3(0.6, 0.6, 0.8);
@@ -21,14 +21,9 @@ fn vertex(in: Vertex) -> VertexOutput {
 
     let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
     out.world_pos = mesh_functions::mesh_position_local_to_world(world_from_local, vec4(in.position, 1.0)).xyz;
-    out.world_pos.y = noise(out.world_pos.xz);
-
-    // TODO: calculate using the derivative
-    out.slope = vec2(
-        (noise(vec2(out.world_pos.x + 0.01, out.world_pos.z)) - out.world_pos.y) / 0.01,
-        (noise(vec2(out.world_pos.x, out.world_pos.z + 0.01)) - out.world_pos.y) / 0.01,
-    );
-
+    let noise = noise(out.world_pos.xz);
+    out.world_pos.y = noise.x;
+    out.slope = noise.yz;
     out.clip_pos = position_world_to_clip(out.world_pos.xyz);
     return out;
 }
@@ -45,7 +40,41 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4(out, 1.0);
 }
 
-fn noise(pos: vec2<f32>) -> f32 {
-    // Update `TERRAIN_MAX_HEIGHT` when changing these values
-    return fbm_simplex_2d(pos * 0.005, 10, 2.0, 0.5) * 20.0;
+// Returns:
+// - x: height
+// - yz: slope
+fn noise(pos: vec2<f32>) -> vec3<f32> {
+    // Update `TERRAIN_MIN_HEIGHT` and `TERRAIN_MAX_HEIGHT` in Rust code
+    // when changing these values
+
+    // https://youtu.be/gsJHzBTPG0Y
+    const slope_amp_falloff = 10.0;
+
+    var freq = 0.005;
+    var amp = 1.0;
+
+    var height = 0.5;
+    var slope = vec2(0.0);
+
+    for (var octave = 0; octave < 9; octave++) {
+        let y = simplex_noise_2d(pos * freq);
+        // TODO: calculate using the derivative
+        slope += vec2(
+            simplex_noise_2d(vec2(pos.x + 0.01, pos.y) * freq) - y,
+            simplex_noise_2d(vec2(pos.x, pos.y + 0.01) * freq) - y,
+        ) / 0.01 * amp;
+        height += y * amp / (1.0 + slope_amp_falloff * length(slope));
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    return vec3(transform_height(height), slope * transform_height_derivative(height));
+}
+
+fn transform_height(height: f32) -> f32 {
+    return mix(height, height * height, sign(height) * 0.5 + 0.5) * 15.0;
+}
+
+fn transform_height_derivative(height: f32) -> f32 {
+    // Power rule
+    return mix(1.0, 2.0 * height, sign(height) * 0.5 + 0.5) * 15.0;
 }

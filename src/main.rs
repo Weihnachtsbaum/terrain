@@ -90,8 +90,13 @@ impl Material for TerrainMaterial {
     }
 }
 
-/// amp * (1 - gain ^ (octaves + 1)) / (1 - gain)
-const TERRAIN_MAX_HEIGHT: f32 = 39.98047;
+/// (start_height - (1 - gain ^ (octaves + 1)) / (1 - gain)) ^ 2 * amp
+const TERRAIN_MIN_HEIGHT: f32 = -22.470703;
+/// (start_height + (1 - gain ^ (octaves + 1)) / (1 - gain)) ^ 2 * amp
+const TERRAIN_MAX_HEIGHT: f32 = 93.60358;
+
+const TERRAIN_CENTER_HEIGHT: f32 = (TERRAIN_MIN_HEIGHT + TERRAIN_MAX_HEIGHT) / 2.0;
+const TERRAIN_HALF_HEIGHT: f32 = TERRAIN_MAX_HEIGHT - TERRAIN_CENTER_HEIGHT;
 
 const LOD_COUNT: u8 = 6;
 
@@ -260,10 +265,10 @@ fn update_chunks(
                 MeshMaterial3d(material.0.clone()),
                 Transform::from_xyz(pos.x, 0.0, pos.y),
                 Aabb {
-                    center: Vec3A::ZERO,
+                    center: Vec3A::new(0.0, TERRAIN_CENTER_HEIGHT, 0.0),
                     half_extents: Vec3A::new(
                         CHUNK_SIZE / 2.0,
-                        TERRAIN_MAX_HEIGHT,
+                        TERRAIN_HALF_HEIGHT,
                         CHUNK_SIZE / 2.0,
                     ),
                 },
