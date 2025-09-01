@@ -16,6 +16,7 @@ use bevy::{
         Render, RenderApp, RenderSet,
         globals::{GlobalsBuffer, GlobalsUniform},
         mesh::PlaneMeshBuilder,
+        primitives::Aabb,
         render_graph::{
             NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
         },
@@ -88,6 +89,9 @@ impl Material for TerrainMaterial {
         "shaders/terrain.wgsl".into()
     }
 }
+
+/// amp * (1 - gain ^ (octaves + 1)) / (1 - gain)
+const TERRAIN_MAX_HEIGHT: f32 = 39.98047;
 
 const LOD_COUNT: u8 = 6;
 
@@ -255,6 +259,14 @@ fn update_chunks(
                 Mesh3d(meshes.get(pos.distance_squared(cam.translation.xz()))),
                 MeshMaterial3d(material.0.clone()),
                 Transform::from_xyz(pos.x, 0.0, pos.y),
+                Aabb {
+                    center: Vec3A::ZERO,
+                    half_extents: Vec3A::new(
+                        CHUNK_SIZE / 2.0,
+                        TERRAIN_MAX_HEIGHT,
+                        CHUNK_SIZE / 2.0,
+                    ),
+                },
             ));
         }
     }

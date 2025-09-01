@@ -46,5 +46,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 fn noise(pos: vec2<f32>) -> f32 {
+    // Update `TERRAIN_MAX_HEIGHT` when changing these values
     return fbm_simplex_2d(pos * 0.005, 10, 2.0, 0.5) * 20.0;
 }
