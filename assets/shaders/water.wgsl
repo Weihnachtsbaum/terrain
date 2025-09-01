@@ -104,7 +104,7 @@ fn reflection(surface_pos: vec3<f32>, normal: vec3<f32>, ray_dir: vec3<f32>) -> 
     let reflect_dir = 2.0 * dot(normal, -ray_dir) * normal + ray_dir;
 
     let ray_pos = surface_pos + reflection_ray_len * reflect_dir;
-    let clip = view.clip_from_world * vec4(ray_pos, 0.0);
+    let clip = view.clip_from_world * vec4(ray_pos, 1.0);
     let ndc = clip.xy / clip.w;
     let uv = ndc_to_uv(ndc);
 
