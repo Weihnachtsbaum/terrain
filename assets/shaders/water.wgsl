@@ -18,7 +18,6 @@
 const see_dist = 100.0;
 const falloff = 0.5;
 const color = vec3(0.0, 0.2, 0.6);
-const specular_size = 1.0;
 
 const reflection_ray_len = 10.0; // keep below see_dist for underwater reflections
 const reflection_blend_size = 0.1;
