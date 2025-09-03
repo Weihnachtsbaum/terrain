@@ -1,7 +1,7 @@
 #import bevy_pbr::{
     forward_io::Vertex,
     mesh_functions,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{globals, view},
     view_transformations::position_world_to_clip
 }
 #import noisy_bevy::simplex_noise_2d
@@ -31,12 +31,15 @@ fn vertex(in: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(vec3(-in.slope.x, 1.0, -in.slope.y));
-    let brightness = clamp(dot(normal, common::sun_dir) * common::sun_intensity, 0.1, 1.0);
+    let sun_dir = common::sun_dir(globals.time);
+    let sky_brightness = common::sky_brightness(common::map_sky_height(sun_dir.y));
+
+    let brightness = clamp(dot(normal, sun_dir) * sky_brightness, 0.1, 1.0);
     let slope = clamp(length(in.slope * 0.5), 0.0, 1.0);
     let albedo = (1.0 - slope) * vec3(0.1, 0.4, 0.0) + slope * vec3(0.2, 0.2, 0.1);
     var out = albedo * brightness;
     let fog = exp(-fog_density * distance(in.world_pos, view.world_position));
-    out = mix(fog_color, out, fog);
+    out = mix(fog_color * sky_brightness, out, fog);
     return vec4(out, 1.0);
 }
 
