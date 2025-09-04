@@ -5,8 +5,9 @@
 }
 #import noisy_bevy::fbm_simplex_3d
 
-const sun_size = 0.04;
-const bloom_intensity = 0.00005;
+const sun_moon_size = 0.04;
+const sun_bloom_intensity = 0.00005;
+const moon_bloom_intensity = 0.00001;
 
 const cloud_vel = vec2(0.02, 0.05);
 const morph_factor = 0.05;
@@ -18,9 +19,11 @@ const dark_cloud_brightness = 0.4;
 fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let ray_dir = uv_to_ray_direction(in.uv);
     let sun_dir = common::sun_dir(globals.time);
+    let moon_dir = common::moon_dir(sun_dir);
 
     let mapped_sun_height = common::map_sky_height(sun_dir.y);
-    let brightness = common::sky_brightness(mapped_sun_height);
+    let mapped_moon_height = common::map_sky_height(moon_dir.y);
+    let brightness = common::sky_brightness(mapped_sun_height, mapped_moon_height);
 
     var out = mix(
         common::low_sky_color,
@@ -30,12 +33,22 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     let sun_dist = distance(ray_dir.xyz, sun_dir);
     var sun_intensity: f32;
-    if sun_dist < sun_size {
-        sun_intensity = mix(1.0, 0.9, sun_dist / sun_size);
+    if sun_dist < sun_moon_size {
+        sun_intensity = mix(1.0, 0.9, sun_dist / sun_moon_size);
     } else {
-        sun_intensity = pow(bloom_intensity, sun_dist);
+        sun_intensity = pow(sun_bloom_intensity, sun_dist);
     }
     out = mix(out, sun_color(mapped_sun_height), sun_intensity);
+
+    // TODO: add lunar phases (affects appearance and position of the moon)
+    let moon_dist = distance(ray_dir.xyz, moon_dir);
+    var moon_intensity: f32;
+    if moon_dist < sun_moon_size {
+        moon_intensity = mix(1.0, 0.9, moon_dist / sun_moon_size);
+    } else {
+        moon_intensity = pow(moon_bloom_intensity, moon_dist);
+    }
+    out = mix(out, moon_color(mapped_moon_height), moon_intensity);
 
     let cloud_pos = vec2(
         ray_dir.x * cloud_height / ray_dir.y + cloud_vel.x * globals.time,
@@ -51,4 +64,9 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
 fn sun_color(mapped_sun_height: f32) -> vec3<f32> {
     return mix(vec3(1.0, 0.2, 0.0), vec3(1.0, 0.9, 0.8), mapped_sun_height);
+}
+
+// TODO: add texture
+fn moon_color(mapped_moon_height: f32) -> vec3<f32> {
+    return mix(vec3(0.5, 0.1, 0.0), vec3(0.5), mapped_moon_height);
 }
