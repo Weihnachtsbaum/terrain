@@ -5,6 +5,9 @@
 }
 #import noisy_bevy::fbm_simplex_3d
 
+const low_sky_color = vec3(1.0, 0.7, 0.5);
+const high_sky_color = vec3(0.2, 0.4, 0.7);
+
 const sun_moon_size = 0.04;
 const sun_bloom_intensity = 0.00005;
 const moon_bloom_intensity = 0.00001;
@@ -26,8 +29,8 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let brightness = common::sky_brightness(mapped_sun_height, mapped_moon_height);
 
     var out = mix(
-        common::low_sky_color,
-        common::high_sky_color,
+        low_sky_color,
+        high_sky_color,
         common::map_sky_height(ray_dir.y),
     ) * brightness;
 

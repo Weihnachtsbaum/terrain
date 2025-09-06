@@ -1,5 +1,7 @@
 #define_import_path common
 
+const grass_color = vec3(0.1, 0.4, 0.0);
+
 // Returns the vector pointing to the sun
 fn sun_dir(time: f32) -> vec3<f32> {
     const day_length = 100.0;
@@ -17,9 +19,6 @@ const moon_brightness = 0.3;
 fn moon_dir(sun_dir: vec3<f32>) -> vec3<f32> {
     return vec3(-sun_dir.xy, sun_dir.z);
 }
-
-const low_sky_color = vec3(1.0, 0.7, 0.5);
-const high_sky_color = vec3(0.2, 0.4, 0.7);
 
 fn sky_brightness(mapped_sun_height: f32, mapped_moon_height: f32) -> f32 {
     return clamp(mapped_sun_height + mapped_moon_height * moon_brightness, 0.1, 1.0);

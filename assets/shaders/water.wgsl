@@ -19,6 +19,7 @@ const see_dist = 100.0;
 const falloff = 0.5;
 const color = vec3(0.0, 0.2, 0.6);
 
+const reflection_color = (color + common::grass_color) * 0.5;
 const reflection_ray_len = 10.0; // keep below see_dist for underwater reflections
 const reflection_blend_size = 0.1;
 
@@ -52,7 +53,8 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
 
     let intensity = water_depth_to_intensity(water_depth);
-    let with_water_color = mix(in_color.rgb, color, intensity);
+    let brightness = brightness();
+    let with_water_color = mix(in_color.rgb, color * brightness, intensity);
 
     if surface_dist <= 0.0 || surface_dist >= cam_terrain_dist {
         return vec4(with_water_color, 1.0);
@@ -64,10 +66,18 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     const r0 = 0.04;
     let fresnel = r0 + (1.0 - r0) * clamp(pow(1.0 - clamp(dot(normal, -ray_dir.xyz), 0.0, 1.0), 5.0), 0.0, 1.0);
 
-    let reflection = reflection(surface_pos, normal, ray_dir.xyz);
+    let reflection = reflection(surface_pos, normal, ray_dir.xyz, brightness);
     let with_reflection = mix(with_water_color, reflection, fresnel);
 
     return vec4(with_reflection, 1.0);
+}
+
+fn brightness() -> f32 {
+    let sun_dir = common::sun_dir(globals.time);
+    let moon_dir = common::moon_dir(sun_dir);
+    let sun_height = common::map_sky_height(sun_dir.y);
+    let moon_height = common::map_sky_height(moon_dir.y);
+    return common::sky_brightness(sun_height, moon_height);
 }
 
 const wave_octaves = 5;
@@ -99,7 +109,7 @@ fn ndc_to_camera_dist(ndc: vec3<f32>) -> f32 {
     return t;
 }
 
-fn reflection(surface_pos: vec3<f32>, normal: vec3<f32>, ray_dir: vec3<f32>) -> vec3<f32> {
+fn reflection(surface_pos: vec3<f32>, normal: vec3<f32>, ray_dir: vec3<f32>, brightness: f32) -> vec3<f32> {
     let reflect_dir = 2.0 * dot(normal, -ray_dir) * normal + ray_dir;
 
     let ray_pos = surface_pos + reflection_ray_len * reflect_dir;
@@ -107,12 +117,7 @@ fn reflection(surface_pos: vec3<f32>, normal: vec3<f32>, ray_dir: vec3<f32>) -> 
     let ndc = clip.xy / clip.w;
     let uv = ndc_to_uv(ndc);
 
-    var base_color: vec3<f32>;
-    if view.world_position.y > 0.0 {
-        base_color = mix(common::high_sky_color, common::low_sky_color, 0.3);
-    } else {
-        base_color = color;
-    }
+    let base_color = reflection_color * brightness;
 
     if uv.x < 0.0 || uv.x >= 1.0 || uv.y < 0.0 || uv.y >= 1.0 {
         return base_color;

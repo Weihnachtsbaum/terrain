@@ -44,7 +44,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         1.0,
     );
     let slope = clamp(length(in.slope * 0.5), 0.0, 1.0);
-    let albedo = (1.0 - slope) * vec3(0.1, 0.4, 0.0) + slope * vec3(0.2, 0.2, 0.1);
+    let albedo = mix(common::grass_color, vec3(0.2, 0.2, 0.1), slope);
     var out = albedo * brightness;
     let fog = exp(-fog_density * distance(in.world_pos, view.world_position));
     out = mix(fog_color * sky_brightness, out, fog);
